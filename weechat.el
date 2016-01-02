@@ -200,11 +200,6 @@ nicknames."
           (const :tag "Off" nil))
   :group 'weechat)
 
-(defcustom weechat-fill-text t
-  "Wether weechat should fill text paragraphs automatically."
-  :type 'boolean
-  :group 'weechat)
-
 (defcustom weechat-fill-column 'frame-width
   "Column used for filling text in buffers."
   :type '(choice
@@ -1045,6 +1040,23 @@ text (technically, this shouldn't happen)."
       (when (< start (point-at-eol))
         (buffer-substring start (point-at-eol))))))
 
+(defun weechat-word-length-at (position)
+  (save-excursion
+    (goto-char position)
+    (cond
+     ((looking-at "[[:alnum:]'#\\.,\?]")
+      (let* ((start (save-excursion
+                      (skip-chars-backward "[:alnum:]'#")
+                      (point)))
+             (end (save-excursion
+                    (skip-chars-forward "[:alnum:]'\\.,\?")
+                    (point))))
+        (- end start)))
+     ((looking-at "[[:space:]]")
+      (skip-chars-forward "[:space:]")
+      (- (point) position))
+     (t 0))))
+
 (cl-defun weechat-print-line (buffer-ptr &key prefix text date line-type highlight invisible nick)
   (setq text   (or text ""))
   (setq prefix (or prefix ""))
@@ -1107,12 +1119,42 @@ text (technically, this shouldn't happen)."
                          (t text))
                         "\n"))
 
-              (when weechat-fill-text
-                ;; Filling is slightly misleading here.  We use this
-                ;; awesome text property called `wrap-prefix'.
+              (cond
+               ;; Overlay continuous lines with `prefix-string'
+               ((eq weechat-fill-column 'frame-width)
                 (let ((overlay (make-overlay text-start (point-max))))
                   (overlay-put overlay 'wrap-prefix
-                               (propertize prefix-string 'face 'default)))))
+                               (propertize prefix-string 'face 'default))))
+               ;; Overlay `weechat-fill-column'-length strings with a
+               ;; newline and `prefix-string'
+               ((and (numberp weechat-fill-column)
+                     (> (length text) weechat-fill-column))
+                (let ((text-end (1- (point-max)))
+                      (wrap-start (+ text-start weechat-fill-column)))
+                  (while (< wrap-start text-end)
+                    (let* ((word-length-at-start (weechat-word-length-at wrap-start))
+                           (offset (save-excursion
+                                     (goto-char wrap-start)
+                                     (skip-chars-backward "[:alnum:]'#\\.,\?")
+                                     (- (point) wrap-start)))
+                           (offset (if (or (< word-length-at-start 10) (< offset 4))
+                                       offset
+                                     0))
+                           (midword (save-excursion
+                                      (goto-char wrap-start)
+                                      (looking-back "[[:alnum:]']")))
+                           (hyphenate (if (and (= offset 0) midword)
+                                          "-"
+                                        ""))
+                           (overlay (make-overlay (+ wrap-start offset)
+                                                  (+ wrap-start offset 1))))
+                      (overlay-put overlay 'before-string
+                                   (propertize (concat hyphenate "\n" prefix-string) 'face 'default))
+                      (setq wrap-start (+ wrap-start offset 1 weechat-fill-column))))))
+
+               ;; Default, no filling
+               (t
+                )))
 
             ;; Go to start of inserted line
             (goto-char (1- (point)))    ;skip newline
