@@ -623,7 +623,7 @@ and port number respectively."
    (let* ((host
            (read-string
             (format "Relay host (default '%s'): " weechat-host-default)
-            nil 'weechat-host-history weechat-host-default))
+            nil nil weechat-host-default))
           (port
            (read-number "Port: " (or weechat-last-port weechat-port-default)))
           (mode (let*
@@ -662,6 +662,7 @@ and port number respectively."
          (password (or password
                        (weechat-get-password host port)))
          (mode (or mode weechat-mode-default)))
+    (push host weechat-host-history)
     (weechat-message "Weechat connecting to %s:%d" host port)
     (when (weechat-relay-connected-p)
       (if (or force-disconnect
